@@ -809,10 +809,3 @@ app.listen(PORT, () => {
 });
 
 module.exports = { runAnalysis, calculateConfidenceScore };
-
-// Test Telegram connection
-const TelegramBot = require('node-telegram-bot-api');
-const bot = new TelegramBot(process.env.TELEGRAM_TOKEN);
-
-bot.sendMessage(process.env.TELEGRAM_CHAT_ID, '✅ Test Alert: Backend is live!');
-

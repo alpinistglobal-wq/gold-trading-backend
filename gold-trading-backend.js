@@ -37,38 +37,9 @@ let priceHistory = {
 /**
  * 1. FETCH GOLD PRICE (metals.live)
  */
-async function fetchGoldPrice() {
-  try {
-    const https = require('https');
-    const agent = new https.Agent({
-      rejectUnauthorized: false
-    });
-    
-    const response = await axios.get('https://api.metals.live/v1/spot/gold', {
-      httpsAgent: agent,
-      timeout: 5000
-    });
-    
-    const goldPrice = response.data.gold || response.data.price || 2045.50;
-    
-    console.log(`✅ Gold Price Fetched: $${goldPrice}`);
-    return {
-      price: goldPrice,
-      timestamp: new Date().toISOString()
-    };
-  } catch (error) {
-    console.log('⚠️ Primary API failed, using fallback price');
-    
-    // Fallback: Use realistic mock price
-    const fallbackPrice = 2045.50 + (Math.random() * 20 - 10);
-    
-    return {
-      price: fallbackPrice,
-      timestamp: new Date().toISOString()
-    };
-  }
-}
-    const change = response.data.rate || 0;
+   async function fetchGoldPrice() {
+     try {
+       const response = await axios.get('https://api.metals.live/v1/spot/gold');    const change = response.data.rate || 0;
     
     // Store in history for technical indicators
     priceHistory.prices.push(price);

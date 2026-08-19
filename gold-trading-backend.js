@@ -1,7 +1,7 @@
 /**
  * GOLD TRADING SIGNALS AGGREGATOR - BACKEND
  * Platform: Node.js (Railway.app)
- * Delivers full trade parameters (Entry, Exit, SL, TP, Risk, Volatility, Forecasts, News) every 5 minutes via Telegram.
+ * Delivers full trade setups (Entry, Exit, SL, TP, Risk, Volatility, 15m/1h/24h Forecasts, News, Schedule Alerts) every 5 minutes.
  */
 
 require('dotenv').config();
@@ -33,9 +33,6 @@ let priceHistory = {
 
 // ===== DATA FETCHERS =====
 
-/**
- * 1. FETCH LIVE GOLD PRICE (Binance PAXG Spot Stream)
- */
 async function fetchGoldPrice() {
   try {
     const response = await axios.get('https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT', {
@@ -60,7 +57,7 @@ async function fetchGoldPrice() {
       timestamp: new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' }),
     };
   } catch (error) {
-    console.log('⚠️ Primary Gold API failed, calculating backup price:', error.message);
+    console.log('⚠️ Primary Gold API failed, using backup price calculation:', error.message);
 
     if (CONFIG.useFallbackPrice) {
       const fallbackPrice = (priceHistory.prices[priceHistory.prices.length - 1] || 2045.50) + (Math.random() * 4 - 2);
@@ -104,7 +101,7 @@ async function fetchMyfxbookSignals() {
 }
 
 /**
- * FETCH LIVE ECONOMIC CALENDAR & NEWS IMPACT (Finnhub API)
+ * FETCH LIVE ECONOMIC CALENDAR, NEWS IMPACT & UPCOMING MAJOR EVENT (Finnhub API)
  */
 async function fetchLiveNewsImpact() {
   const apiKey = process.env.FINNHUB_API_KEY;
@@ -112,15 +109,22 @@ async function fetchLiveNewsImpact() {
   if (!apiKey) {
     return {
       source: 'Live News',
-      newsUpdate: 'Finnhub API key missing in Railway environment variables.'
+      newsUpdate: 'Finnhub API key missing in environment variables.',
+      upcomingEvent: 'Finnhub API key missing.'
     };
   }
 
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const todayObj = new Date();
+    const today = todayObj.toISOString().split('T')[0];
+    
+    // Set horizon 7 days out to catch upcoming major events
+    const nextWeekObj = new Date();
+    nextWeekObj.setDate(todayObj.getDate() + 7);
+    const nextWeek = nextWeekObj.toISOString().split('T')[0];
 
     const response = await axios.get('https://finnhub.io/api/v1/economic-calendar', {
-      params: { from: today, to: today, token: apiKey },
+      params: { from: today, to: nextWeek, token: apiKey },
       timeout: 5000
     });
 
@@ -129,38 +133,109 @@ async function fetchLiveNewsImpact() {
     if (!Array.isArray(calendarData) || calendarData.length === 0) {
       return { 
         source: 'Finnhub Live Calendar', 
-        newsUpdate: 'No major high-impact USD economic events scheduled for today.' 
+        newsUpdate: 'No major high-impact USD economic events scheduled for today.',
+        upcomingEvent: 'No major global economic events scheduled for the next 7 days.'
       };
     }
 
+    // Filter USD / US events
     const usdEvents = calendarData.filter(e => 
-      e && 
-      (e.country === 'US' || e.currency === 'USD') && 
+      e && (e.country === 'US' || e.currency === 'USD') && 
       (e.impact === 'high' || e.impact === 'medium')
     );
 
-    if (usdEvents.length === 0) {
-      return { 
-        source: 'Finnhub Live Calendar', 
-        newsUpdate: 'No major high-impact USD economic events scheduled for today.' 
-      };
+    let newsUpdate = 'No major high-impact USD economic events scheduled for today.';
+    const todayEvents = usdEvents.filter(e => e?.time && e.time.startsWith(today));
+    
+    if (todayEvents.length > 0) {
+      const topEvent = todayEvents[0];
+      const eventTime = topEvent?.time ? topEvent.time.slice(11, 16) : 'Today';
+      newsUpdate = `⚠️ HIGH IMPACT: US "${topEvent?.event || 'Macro Event'}" scheduled at ${eventTime} UTC.`;
     }
 
-    const topEvent = usdEvents[0];
-    const eventTime = topEvent?.time ? topEvent.time.slice(11, 16) : 'Today';
+    // Determine upcoming major event within the 7-day window
+    let upcomingEvent = 'No high-impact macro catalysts detected within the 7-day window.';
+    const futureEvents = usdEvents.filter(e => e?.time && !e.time.startsWith(today));
+    
+    if (futureEvents.length > 0) {
+      const nextMajor = futureEvents[0];
+      const eventDate = nextMajor?.time ? nextMajor.time.slice(0, 10) : 'Upcoming';
+      const eventTime = nextMajor?.time ? nextMajor.time.slice(11, 16) : '';
+      upcomingEvent = `📅 <b>Upcoming Catalyst:</b> US "${nextMajor?.event || 'Major Economic Data'}" on ${eventDate} at ${eventTime} UTC.`;
+    }
 
-    return {
-      source: 'Finnhub Live Calendar',
-      newsUpdate: `⚠️ HIGH IMPACT: US "${topEvent?.event || 'Macro Event'}" scheduled at ${eventTime} UTC.`
-    };
+    return { source: 'Finnhub Live Calendar', newsUpdate, upcomingEvent };
 
   } catch (error) {
-    console.error('⚠️ Finnhub fetch error handled:', error?.message || error);
+    console.error('⚠️ Finnhub fetch error safely handled:', error?.message || error);
     return { 
       source: 'Finnhub Live Calendar', 
-      newsUpdate: 'No major high-impact USD economic events scheduled for today.' 
+      newsUpdate: 'No major high-impact USD economic events scheduled for today.',
+      upcomingEvent: 'Unable to synchronize upcoming event calendar at this time.'
     };
   }
+}
+
+/**
+ * AUTOMATED MARKET CALENDAR GUARD
+ * Checks upcoming holiday closures, early closes, and late opens.
+ */
+function checkMarketCalendar() {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1;
+  const date = now.getUTCDate();
+  const day = now.getUTCDay(); // 0 = Sun, 6 = Sat
+
+  const todayStr = `${year}-${String(month).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
+  
+  const tomorrowObj = new Date(now);
+  tomorrowObj.setDate(now.getUTCDate() + 1);
+  const tomorrowStr = `${tomorrowObj.getUTCFullYear()}-${String(tomorrowObj.getUTCMonth() + 1).padStart(2, '0')}-${String(tomorrowObj.getUTCDate()).padStart(2, '0')}`;
+
+  // Market Holidays Table
+  const holidays = {
+    '2026-01-01': 'New Year\'s Day',
+    '2026-01-19': 'Martin Luther King Jr. Day',
+    '2026-02-16': 'Presidents\' Day',
+    '2026-04-03': 'Good Friday',
+    '2026-05-25': 'Memorial Day',
+    '2026-06-19': 'Juneteenth',
+    '2026-07-03': 'Independence Day (Observed)',
+    '2026-09-07': 'Labor Day',
+    '2026-11-26': 'Thanksgiving Day',
+    '2026-12-25': 'Christmas Day'
+  };
+
+  // Early Closure / Special Hours Table
+  const earlyCloses = {
+    '2026-11-27': 'Day after Thanksgiving (Metals close early at 18:45 UTC / 1:45 PM ET)',
+    '2026-12-24': 'Christmas Eve (Metals close early at 18:45 UTC / 1:45 PM ET)'
+  };
+
+  let alertMessage = null;
+
+  // 1. Check for Holiday Tomorrow (1 Day Before Warning)
+  if (holidays[tomorrowStr]) {
+    alertMessage = `🚨 <b>HOLIDAY WARNING:</b> Market closed tomorrow (${tomorrowStr}) for <b>${holidays[tomorrowStr]}</b>. Expect lower liquidity and wider spreads!`;
+  } 
+  // 2. Check for Holiday Today
+  else if (holidays[todayStr]) {
+    alertMessage = `🔴 <b>MARKET CLOSED:</b> US Financial Markets closed today for <b>${holidays[todayStr]}</b>. Trading halted or extremely illiquid.`;
+  }
+  // 3. Check for Early Closure Today
+  else if (earlyCloses[todayStr]) {
+    alertMessage = `⚠️ <b>EARLY CLOSURE NOTICE:</b> ${earlyCloses[todayStr]}. Adjust positions accordingly!`;
+  }
+  // 4. Check Weekend Opening/Closing Transitions
+  else if (day === 5 && now.getUTCHours() >= 20) {
+    alertMessage = `⌛ <b>MARKET CLOSING:</b> Weekend market session closing soon. High volatility expected.`;
+  }
+  else if (day === 0 && now.getUTCHours() >= 21) {
+    alertMessage = `🟢 <b>MARKET OPENING:</b> Asian session re-opening post-weekend. Watch for opening gaps.`;
+  }
+
+  return alertMessage;
 }
 
 async function fetchKitcoSentiment() {
@@ -291,7 +366,7 @@ function analyzeVADERSentiment() {
   return { bot: 'VADER', signal: signals[Math.floor(Math.random() * 3)], confidence: 60 };
 }
 
-// ===== TRADE METRICS CALCULATION (SL, TP, RISK, VOLATILITY, FORECASTS) =====
+// ===== TRADE METRICS CALCULATION =====
 
 function calculateTradeMetrics(currentPrice, recommendation, buyCount, sellCount, prices) {
   let volatilityStatus = 'LOW 🟢';
@@ -330,21 +405,25 @@ function calculateTradeMetrics(currentPrice, recommendation, buyCount, sellCount
   let stopLoss = 'N/A';
   let takeProfit = 'N/A';
   let exitPrice = 'N/A';
+
   let forecast15m = 'Consolidating Side-ways';
-  let forecast1h = 'Range-bound movement likely to continue';
+  let forecast1h = 'Range-bound movement likely';
+  let forecast24h = 'Macro range holding within support/resistance levels';
 
   if (recommendation.includes('BUY')) {
     stopLoss = (basePrice - priceDelta).toFixed(2);
     takeProfit = (basePrice + (priceDelta * 1.8)).toFixed(2);
     exitPrice = takeProfit;
     forecast15m = `Bullish continuation towards $${takeProfit}`;
-    forecast1h = `Upward structure intact, potential push to $${(basePrice + (priceDelta * 3.0)).toFixed(2)}`;
+    forecast1h = `Upward structure intact, testing $${(basePrice + (priceDelta * 2.5)).toFixed(2)}`;
+    forecast24h = `Daily bullish trend target towards $${(basePrice + (priceDelta * 4.0)).toFixed(2)}`;
   } else if (recommendation.includes('SELL')) {
     stopLoss = (basePrice + priceDelta).toFixed(2);
     takeProfit = (basePrice - (priceDelta * 1.8)).toFixed(2);
     exitPrice = takeProfit;
     forecast15m = `Bearish pressure towards $${takeProfit}`;
-    forecast1h = `Downward trend expected, potential drop to $${(basePrice - (priceDelta * 3.0)).toFixed(2)}`;
+    forecast1h = `Downward trend expected, testing $${(basePrice - (priceDelta * 2.5)).toFixed(2)}`;
+    forecast24h = `Daily bearish macro target towards $${(basePrice - (priceDelta * 4.0)).toFixed(2)}`;
   }
 
   return {
@@ -357,6 +436,7 @@ function calculateTradeMetrics(currentPrice, recommendation, buyCount, sellCount
     exitPrice,
     forecast15m,
     forecast1h,
+    forecast24h,
   };
 }
 
@@ -395,6 +475,11 @@ async function sendTelegramAlert(data) {
 
     const actionEmoji = data.recommendation.includes('BUY') ? '🟢' : data.recommendation.includes('SELL') ? '🔴' : '🟡';
 
+    let scheduleSection = '';
+    if (data.marketScheduleAlert) {
+      scheduleSection = `\n🔔 <b>MARKET SCHEDULE:</b>\n${data.marketScheduleAlert}\n`;
+    }
+
     const message = 
 `${actionEmoji} <b>LIVE GOLD TRADING SIGNAL</b>
 
@@ -411,6 +496,7 @@ async function sendTelegramAlert(data) {
 
 🔮 <b>15-MIN FORECAST:</b> ${data.forecast15m}
 🔮 <b>1-HOUR FORECAST:</b> ${data.forecast1h}
+🔮 <b>24-HOUR FORECAST:</b> ${data.forecast24h}
 ⚡ <b>VOLATILITY:</b> ${data.volatilityStatus}
 
 📈 <b>ENGINE METRICS:</b>
@@ -419,11 +505,12 @@ async function sendTelegramAlert(data) {
 
 📍 <b>Source:</b> ${data.priceSource}
 🕐 <b>Time:</b> ${data.timestamp} (PKT)
-
-📰 <b>LIVE NEWS IMPACT:</b> ${data.newsUpdate}`;
+${scheduleSection}
+📰 <b>LIVE NEWS IMPACT:</b> ${data.newsUpdate}
+🗓️ <b>UPCOMING MAJOR EVENT:</b> ${data.upcomingEvent}`;
 
     await bot.sendMessage(CONFIG.telegramChatId, message, { parse_mode: 'HTML' });
-    console.log('✅ Live Telegram alert sent with full trade parameters and news');
+    console.log('✅ Telegram alert sent with 24h forecast, upcoming event, and schedule alerts');
   } catch (error) {
     console.error('Telegram broadcast error:', error.message);
   }
@@ -436,11 +523,12 @@ async function runAnalysis() {
   const startTime = new Date();
 
   try {
-    console.log('📡 Fetching signal sources...');
+    console.log('📡 Fetching signal sources & calendar schedule...');
     const goldPriceData = await fetchGoldPrice();
     const tv = await fetchTradingViewSignals(priceHistory.prices);
     const myfxbook = await fetchMyfxbookSignals();
     const liveNews = await fetchLiveNewsImpact();
+    const scheduleAlert = checkMarketCalendar();
     const kitco = await fetchKitcoSentiment();
     const dxy = await fetchDXYData();
     const vix = await fetchVIXData();
@@ -485,14 +573,16 @@ async function runAnalysis() {
       rsi: rsi.rsi,
       macd: macd.signal,
       newsUpdate: liveNews.newsUpdate,
+      upcomingEvent: liveNews.upcomingEvent,
+      marketScheduleAlert: scheduleAlert,
       ...metrics,
     };
 
     console.log('\n📈 ANALYSIS RESULTS:');
     console.log(`Price: $${analysisData.goldPrice}`);
     console.log(`Recommendation: ${analysisData.recommendation}`);
-    console.log(`News: ${analysisData.newsUpdate}`);
-    console.log(`Entry: $${analysisData.entryPrice} | SL: $${analysisData.stopLoss} | TP: $${analysisData.takeProfit}`);
+    console.log(`24h Forecast: ${analysisData.forecast24h}`);
+    console.log(`Upcoming Event: ${analysisData.upcomingEvent}`);
 
     await sendTelegramAlert(analysisData);
 

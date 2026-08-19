@@ -104,19 +104,59 @@ async function fetchMyfxbookSignals() {
   return { source: 'Myfxbook', signal: signals[Math.floor(Math.random() * 3)], confidence: 60 };
 }
 
-// Simulated Live News / Calendar Event Fetcher
+/**
+ * FETCH LIVE ECONOMIC CALENDAR & NEWS IMPACT (Finnhub API)
+ */
 async function fetchLiveNewsImpact() {
-  const newsScenarios = [
-    "Normal conditions. No major macro news expected.",
-    "Normal conditions. Market digesting recent data.",
-    "⚠️ HIGH IMPACT: US CPI / Inflation Data release soon. Expect heavy volatility.",
-    "⚠️ HIGH IMPACT: Fed Chair speaking. Sudden spikes likely.",
-    "⚠️ MEDIUM IMPACT: Jobless claims data impending.",
-    "Normal conditions. Liquidity building up for US session."
-  ];
-  // In a real production app, you would parse an RSS feed or Economic Calendar API here.
-  const newsUpdate = newsScenarios[Math.floor(Math.random() * newsScenarios.length)];
-  return { source: 'Live News', newsUpdate };
+  const apiKey = process.env.FINNHUB_API_KEY;
+
+  if (!apiKey) {
+    return {
+      source: 'Live News',
+      newsUpdate: 'Finnhub API key missing in Railway environment variables.'
+    };
+  }
+
+  try {
+    // Get today's date in YYYY-MM-DD format
+    const today = new Date().toISOString().split('T')[0];
+
+    const response = await axios.get(
+      `https://finnhub.io/api/v1/economic-calendar?from=${today}&to=${today}&token=${apiKey}`,
+      { timeout: 5000 }
+    );
+
+    const events = response.data.economicCalendar || [];
+
+    // Filter for high and medium impact US/USD economic events
+    const usdEvents = events.filter(e => 
+      (e.country === 'US' || e.currency === 'USD') && 
+      (e.impact === 'high' || e.impact === 'medium')
+    );
+
+    if (usdEvents.length === 0) {
+      return { 
+        source: 'Finnhub Live Calendar', 
+        newsUpdate: 'No major high-impact USD economic events scheduled for today.' 
+      };
+    }
+
+    // Format top macro event
+    const topEvent = usdEvents[0];
+    const eventTime = topEvent.time ? topEvent.time.slice(11, 16) : 'Today';
+
+    return {
+      source: 'Finnhub Live Calendar',
+      newsUpdate: `⚠️ HIGH IMPACT: US "${topEvent.event}" scheduled at ${eventTime} UTC.`
+    };
+
+  } catch (error) {
+    console.error('⚠️ Finnhub API fetch error:', error.message);
+    return { 
+      source: 'Finnhub Live Calendar', 
+      newsUpdate: 'Unable to fetch live economic calendar data at this time.' 
+    };
+  }
 }
 
 async function fetchKitcoSentiment() {

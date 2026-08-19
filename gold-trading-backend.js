@@ -1,7 +1,7 @@
 /**
  * GOLD TRADING SIGNALS AGGREGATOR - BACKEND
  * Platform: Node.js (Railway.app)
- * Runs every 5 minutes, fetches 10 sources, analyzes with 8 AI bots
+ * Runs every 5 minutes, fetches 10 sources, analyzes with 7 AI bots
  * Updates Google Sheets + Sends Telegram alerts
  */
 
@@ -19,7 +19,6 @@ const CONFIG = {
   googleSheetId: process.env.GOOGLE_SHEET_ID || '18EyoJ1DHtEd3fe_JydexTI9CnjaLpE2-BFctJ6XiffE',
   telegramToken: process.env.TELEGRAM_TOKEN || '8946944777:AAFuiMX9Ii8SGEcqDT9Z93vYmym7O3WZUdw',
   telegramChatId: process.env.TELEGRAM_CHAT_ID || '8001115820',
-  claudeApiKey: process.env.CLAUDE_API_KEY || 'sk-test',
   newsApiKey: process.env.NEWS_API_KEY || 'free',
   checkInterval: 5 * 60 * 1000, // 5 minutes
   useFallbackPrice: true, // Use fallback if API fails
@@ -75,9 +74,10 @@ async function fetchGoldPrice() {
 /**
  * 1. FETCH GOLD PRICE (metals.live)
  */
-   async function fetchGoldPrice() {
-     try {
-       const response = await axios.get('https://api.metals.live/v1/spot/gold');    const change = response.data.rate || 0;
+async function fetchGoldPrice() {
+  try {
+    const response = await axios.get('https://api.metals.live/v1/spot/gold');
+    const change = response.data.rate || 0;
     
     // Store in history for technical indicators
     priceHistory.prices.push(price);
@@ -312,7 +312,7 @@ async function fetchOandaPositioning() {
   }
 }
 
-// ===== PART 2: AI BOT SIGNAL PROCESSORS (8 BOTS) =====
+// ===== PART 2: AI BOT SIGNAL PROCESSORS (7 BOTS) =====
 
 /**
  * BOT 1: RSI MOMENTUM
@@ -498,7 +498,7 @@ function analyzeFinBERTSentiment(newsHeadlines = []) {
 }
 
 /**
- * BOT 7: CORRELATION ANALYZER
+ * BOT 6: CORRELATION ANALYZER
  */
 function analyzeCorrelations(prices) {
   try {
@@ -530,7 +530,7 @@ function analyzeCorrelations(prices) {
 }
 
 /**
- * BOT 8: VADER SENTIMENT (Social media)
+ * BOT 7: VADER SENTIMENT (Social media)
  */
 function analyzeVADERSentiment() {
   try {
@@ -697,7 +697,7 @@ async function runAnalysis() {
 
     const sources = [tvSignals, myfxbook, forexFactory, kitco, dxy, vix, newsSentiment, telegram, oanda];
 
-    // Run all 8 AI bots
+    // Run all 7 AI bots
     console.log('🤖 Running AI bots...');
     const rsiData = calculateRSI(priceHistory.prices);
     const macdData = calculateMACD(priceHistory.prices);
@@ -707,7 +707,7 @@ async function runAnalysis() {
     const correlationData = analyzeCorrelations(priceHistory.prices);
     const vaderData = analyzeVADERSentiment();
 
-    const bots = [rsiData, macdData, bbData, stochData, finbertData, claudeData, correlationData, vaderData];
+    const bots = [rsiData, macdData, bbData, stochData, finbertData, correlationData, vaderData];
 
     // Calculate risk factors
     const riskFactors = {
@@ -745,8 +745,8 @@ async function runAnalysis() {
     console.log(`Signals: ${analysisData.buyCount} BUY, ${analysisData.sellCount} SELL`);
 
     // Update Google Sheet
-       // await updateGoogleSheets(analysisData); // DISABLED FOR NOW
-   console.log('✅ Google Sheets update skipped');
+    // await updateGoogleSheets(analysisData); // DISABLED FOR NOW
+    console.log('✅ Google Sheets update skipped');
 
     // Send Telegram alert if confidence high enough
     if (analysisData.shouldAlert && analysisData.finalConfidence >= 75) {

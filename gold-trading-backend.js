@@ -704,7 +704,6 @@ async function runAnalysis() {
     const bbData = calculateBollingerBands(priceHistory.prices);
     const stochData = calculateStochastic(priceHistory.prices);
     const finbertData = analyzeFinBERTSentiment();
-    const claudeData = await analyzeClaudePatterns(priceHistory.prices);
     const correlationData = analyzeCorrelations(priceHistory.prices);
     const vaderData = analyzeVADERSentiment();
 

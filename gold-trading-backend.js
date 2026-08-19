@@ -754,7 +754,8 @@ async function runAnalysis() {
     console.log(`Signals: ${analysisData.buyCount} BUY, ${analysisData.sellCount} SELL`);
 
     // Update Google Sheet
-    await updateGoogleSheets(analysisData);
+       // await updateGoogleSheets(analysisData); // DISABLED FOR NOW
+   console.log('✅ Google Sheets update skipped');
 
     // Send Telegram alert if confidence high enough
     if (analysisData.shouldAlert && analysisData.finalConfidence >= 75) {

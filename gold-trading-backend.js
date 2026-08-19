@@ -498,50 +498,6 @@ function analyzeFinBERTSentiment(newsHeadlines = []) {
 }
 
 /**
- * BOT 6: CLAUDE AI PATTERN RECOGNITION
- */
-async function analyzeClaudePatterns(priceData) {
-  try {
-    if (!CONFIG.claudeApiKey) {
-      return { bot: 'Claude AI', signal: 'NEUTRAL', confidence: 50, note: 'API key not set' };
-    }
-
-    const recentPrices = priceData.slice(-10);
-    const priceChange = ((recentPrices[recentPrices.length - 1] - recentPrices[0]) / recentPrices[0] * 100).toFixed(2);
-
-    const prompt = `Gold (XAU/USD) price data. Recent 10-candle prices: ${recentPrices.join(', ')}. Change: ${priceChange}%. Respond in JSON: {"signal": "BUY"|"SELL"|"NEUTRAL", "reasoning": "brief", "confidence": 0-100}`;
-
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model: 'claude-opus-4-6',
-        max_tokens: 200,
-        messages: [{ role: 'user', content: prompt }],
-      },
-      {
-        headers: {
-          'x-api-key': CONFIG.claudeApiKey,
-          'anthropic-version': '2023-06-01',
-        },
-      }
-    );
-
-    const content = response.data.content[0].text;
-    const parsed = JSON.parse(content);
-
-    return {
-      bot: 'Claude AI',
-      signal: parsed.signal || 'NEUTRAL',
-      confidence: parsed.confidence || 50,
-      reasoning: parsed.reasoning,
-    };
-  } catch (error) {
-    console.error('Claude API error:', error.message);
-    return { bot: 'Claude AI', signal: 'NEUTRAL', confidence: 50, error: true };
-  }
-}
-
-/**
  * BOT 7: CORRELATION ANALYZER
  */
 function analyzeCorrelations(prices) {

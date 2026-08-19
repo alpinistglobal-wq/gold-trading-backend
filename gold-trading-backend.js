@@ -34,8 +34,10 @@ let priceHistory = {
   maxSize: 100, // Keep last 100 prices
 };
 
+// ===== PART 1: DATA FETCHERS (10 SIGNAL SOURCES) =====
+
 /**
- * 1. FETCH GOLD PRICE (Swissquote Financial API)
+ * 1. FETCH GOLD PRICE (Swissquote API)
  */
 async function fetchGoldPrice() {
   try {
@@ -47,11 +49,9 @@ async function fetchGoldPrice() {
       }
     });
 
-    // Parse Swissquote response
-    const quote = response.data[0]?.profiles[0];
-    const price = quote?.bid || quote?.ask || 2045.50;
+    const profile = response.data?.[0]?.profiles?.[0];
+    const price = profile?.bid || profile?.ask || 2045.50;
 
-    // Push into price history array for technical indicators
     priceHistory.prices.push(price);
     priceHistory.timestamps.push(new Date());
     if (priceHistory.prices.length > 100) {
@@ -68,7 +68,7 @@ async function fetchGoldPrice() {
       timestamp: new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' }),
     };
   } catch (error) {
-    console.error('⚠️ Gold API fetch failed, activating fallback price:', error.message);
+    console.log('⚠️ Gold API fetch failed, using fallback price');
 
     if (CONFIG.useFallbackPrice) {
       const fallbackPrice = 2045.50 + (Math.random() * 20 - 10);
@@ -88,7 +88,6 @@ async function fetchGoldPrice() {
     return { source: 'swissquote', price: null, error: true };
   }
 }
-// ===== PART 1: DATA FETCHERS (10 SIGNAL SOURCES) =====
 
 /**
  * 1. FETCH GOLD PRICE (metals.live)

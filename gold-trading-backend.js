@@ -1,7 +1,7 @@
 /**
  * GOLD TRADING SIGNALS AGGREGATOR - BACKEND
  * Platform: Node.js (Railway.app)
- * Runs every 5 minutes, fetches live spot prices, processes indicators, and broadcasts updates.
+ * Delivers full trade parameters (Entry, Exit, SL, TP, Risk, Volatility, Forecast) every 5 minutes via Telegram.
  */
 
 require('dotenv').config();
@@ -12,6 +12,7 @@ const RSI = require('technicalindicators').RSI;
 const MACD = require('technicalindicators').MACD;
 const BB = require('technicalindicators').BollingerBands;
 const Stochastic = require('technicalindicators').Stochastic;
+const ATR = require('technicalindicators').ATR;
 
 // ===== CONFIGURATION =====
 const CONFIG = {
@@ -213,6 +214,73 @@ function analyzeVADERSentiment() {
   return { bot: 'VADER', signal: signals[Math.floor(Math.random() * 3)], confidence: 60 };
 }
 
+// ===== TRADE METRICS CALCULATION (SL, TP, RISK, VOLATILITY, FORECAST) =====
+
+function calculateTradeMetrics(currentPrice, recommendation, buyCount, sellCount, prices) {
+  // 1. Calculate Volatility via standard deviation / price variance
+  let volatilityStatus = 'LOW';
+  let priceDelta = 6.0; // Default buffer in USD
+  if (prices.length >= 10) {
+    const recent = prices.slice(-10);
+    const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
+    const variance = recent.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / recent.length;
+    const stdDev = Math.sqrt(variance);
+    if (stdDev > 2.5) {
+      volatilityStatus = 'HIGH ⚡';
+      priceDelta = 12.0;
+    } else if (stdDev > 1.0) {
+      volatilityStatus = 'MEDIUM 📈';
+      priceDelta = 8.0;
+    } else {
+      volatilityStatus = 'LOW 🟢';
+      priceDelta = 5.0;
+    }
+  }
+
+  // 2. Market Bias (Bullish / Bearish / Neutral)
+  let bias = 'NEUTRAL ⚖️';
+  if (buyCount > sellCount + 2) bias = 'BULLISH 🐂';
+  else if (sellCount > buyCount + 2) bias = 'BEARISH 🐻';
+
+  // 3. Market Risk Level
+  let riskLevel = 'MEDIUM RISK ⚠️';
+  if (volatilityStatus.includes('HIGH') || Math.abs(buyCount - sellCount) <= 1) {
+    riskLevel = 'HIGH RISK 🛑';
+  } else if (volatilityStatus.includes('LOW') && Math.abs(buyCount - sellCount) >= 4) {
+    riskLevel = 'LOW RISK ✅';
+  }
+
+  // 4. Entry, Stop Loss, Take Profit & Exit Target
+  let entryPrice = currentPrice.toFixed(2);
+  let stopLoss = 'N/A';
+  let takeProfit = 'N/A';
+  let exitPrice = 'N/A';
+  let forecast15m = 'Consolidating Side-ways';
+
+  if (recommendation.includes('BUY')) {
+    stopLoss = (currentPrice - priceDelta).toFixed(2);
+    takeProfit = (currentPrice + (priceDelta * 1.8)).toFixed(2);
+    exitPrice = takeProfit;
+    forecast15m = `Bullish continuation towards $${takeProfit}`;
+  } else if (recommendation.includes('SELL')) {
+    stopLoss = (currentPrice + priceDelta).toFixed(2);
+    takeProfit = (currentPrice - (priceDelta * 1.8)).toFixed(2);
+    exitPrice = takeProfit;
+    forecast15m = `Bearish pressure towards $${takeProfit}`;
+  }
+
+  return {
+    volatilityStatus,
+    bias,
+    riskLevel,
+    entryPrice,
+    stopLoss,
+    takeProfit,
+    exitPrice,
+    forecast15m,
+  };
+}
+
 // ===== SCORING ENGINE =====
 
 function calculateConfidenceScore(sources, bots) {
@@ -249,26 +317,31 @@ async function sendTelegramAlert(data) {
     const actionEmoji = data.recommendation.includes('BUY') ? '🟢' : data.recommendation.includes('SELL') ? '🔴' : '🟡';
 
     const message = 
-`${actionEmoji} <b>LIVE GOLD UPDATE (5-MIN CYCLE)</b>
+`${actionEmoji} <b>LIVE GOLD TRADING SIGNAL</b>
 
-💰 <b>Current Price:</b> $${data.goldPrice}
-📈 <b>Recommendation:</b> ${data.recommendation}
-🎯 <b>System Confidence:</b> ${data.finalConfidence}%
+📊 <b>RECOMMENDATION:</b> ${data.recommendation}
+🎯 <b>CONFIDENCE:</b> ${data.finalConfidence}%
+🐂 <b>MARKET BIAS:</b> ${data.bias}
+⚠️ <b>RISK RATING:</b> ${data.riskLevel}
 
-📊 <b>Signal Breakdown (${data.totalSignals} Engine Sources):</b>
-• BUY Signals: ${data.buyCount}
-• SELL Signals: ${data.sellCount}
-• NEUTRAL Signals: ${data.neutralCount}
+💵 <b>TRADE SETUP:</b>
+• <b>Entry Price:</b> $${data.entryPrice}
+• <b>Stop Loss (SL):</b> $${data.stopLoss}
+• <b>Take Profit (TP):</b> $${data.takeProfit}
+• <b>Target Exit:</b> $${data.exitPrice}
 
-📉 <b>Technical Indicators:</b>
-• RSI (14): ${data.rsi}
-• MACD: ${data.macd}
+🔮 <b>15-MIN FORECAST:</b> ${data.forecast15m}
+⚡ <b>VOLATILITY:</b> ${data.volatilityStatus}
 
-📍 <b>Data Source:</b> ${data.priceSource}
+📈 <b>ENGINE METRICS:</b>
+• BUY: ${data.buyCount} | SELL: ${data.sellCount} | NEUTRAL: ${data.neutralCount}
+• RSI (14): ${data.rsi} | MACD: ${data.macd}
+
+📍 <b>Source:</b> ${data.priceSource}
 🕐 <b>Time:</b> ${data.timestamp} (PKT)`;
 
     await bot.sendMessage(CONFIG.telegramChatId, message, { parse_mode: 'HTML' });
-    console.log('✅ Live 5-minute Telegram update sent');
+    console.log('✅ Live Telegram alert sent with full trade parameters');
   } catch (error) {
     console.error('Telegram broadcast error:', error.message);
   }
@@ -306,8 +379,16 @@ async function runAnalysis() {
 
     const bots = [rsi, macd, bb, stoch, finbert, correlation, vader];
 
-    console.log('📊 Calculating confidence score...');
+    console.log('📊 Calculating confidence score & trade parameters...');
     const scoring = calculateConfidenceScore(sources, bots);
+
+    const metrics = calculateTradeMetrics(
+      goldPriceData.price,
+      scoring.recommendation,
+      scoring.buyCount,
+      scoring.sellCount,
+      priceHistory.prices
+    );
 
     const analysisData = {
       timestamp: new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' }),
@@ -321,15 +402,16 @@ async function runAnalysis() {
       totalSignals: scoring.totalSignals,
       rsi: rsi.rsi,
       macd: macd.signal,
+      ...metrics,
     };
 
     console.log('\n📈 ANALYSIS RESULTS:');
     console.log(`Price: $${analysisData.goldPrice}`);
     console.log(`Recommendation: ${analysisData.recommendation}`);
-    console.log(`Confidence: ${analysisData.finalConfidence}%`);
-    console.log(`Signals: ${analysisData.buyCount} BUY, ${analysisData.sellCount} SELL, ${analysisData.neutralCount} NEUTRAL`);
+    console.log(`Bias: ${analysisData.bias} | Risk: ${analysisData.riskLevel}`);
+    console.log(`Entry: $${analysisData.entryPrice} | SL: $${analysisData.stopLoss} | TP: $${analysisData.takeProfit}`);
 
-    // Mandatory Telegram update every 5 minutes regardless of confidence level
+    // Mandatory Telegram update every 5 minutes
     await sendTelegramAlert(analysisData);
 
     const duration = ((new Date() - startTime) / 1000).toFixed(2);

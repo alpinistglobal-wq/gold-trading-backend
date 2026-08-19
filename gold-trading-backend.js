@@ -34,41 +34,62 @@ let priceHistory = {
   maxSize: 100, // Keep last 100 prices
 };
 
-// ===== GOLD PRICE FETCH FUNCTION =====
+/**
+ * 1. FETCH GOLD PRICE (metals.live)
+ */
 async function fetchGoldPrice() {
   try {
     const response = await axios.get('https://api.metals.live/v1/spot/gold', {
-      timeout: 5000
+      timeout: 5000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json'
+      }
     });
-    
-    const goldPrice = response.data.gold || 2045.50;
-    console.log(`✅ Gold Price Fetched: $${goldPrice.toFixed(2)}`);
-    
+
+    // Handle array or object response structure from metals.live
+    const rawData = Array.isArray(response.data) ? response.data[0] : response.data;
+    const price = rawData?.gold || rawData?.price || 2045.50;
+    const change = rawData?.change || rawData?.rate || 0;
+
+    // Store in history for technical indicators
+    priceHistory.prices.push(price);
+    priceHistory.timestamps.push(new Date());
+    if (priceHistory.prices.length > 100) {
+      priceHistory.prices.shift();
+      priceHistory.timestamps.shift();
+    }
+
+    console.log(`✅ Gold Price Fetched: $${price.toFixed(2)}`);
+
     return {
-      price: goldPrice,
-      timestamp: new Date().toISOString(),
-      source: 'metals.live'
+      source: 'metals.live',
+      price: parseFloat(price.toFixed(2)),
+      change24h: parseFloat(change.toFixed(2)),
+      timestamp: new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' }),
     };
   } catch (error) {
-    console.log('⚠️ API fetch failed, using fallback price');
-    
+    console.error('⚠️ Gold API fetch failed, using fallback price:', error.message);
+
     if (CONFIG.useFallbackPrice) {
-      // Fallback: Realistic mock price
       const fallbackPrice = 2045.50 + (Math.random() * 20 - 10);
+      const parsedPrice = parseFloat(fallbackPrice.toFixed(2));
+
+      priceHistory.prices.push(parsedPrice);
+      priceHistory.timestamps.push(new Date());
+
       return {
-        price: parseFloat(fallbackPrice.toFixed(2)),
-        timestamp: new Date().toISOString(),
-        source: 'fallback'
+        source: 'fallback',
+        price: parsedPrice,
+        change24h: 0,
+        timestamp: new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' }),
       };
     }
-    
-    return {
-      price: null,
-      timestamp: new Date().toISOString(),
-      source: 'error'
-    };
+
+    return { source: 'metals.live', price: null, error: true };
   }
 }
+
 // ===== PART 1: DATA FETCHERS (10 SIGNAL SOURCES) =====
 
 /**

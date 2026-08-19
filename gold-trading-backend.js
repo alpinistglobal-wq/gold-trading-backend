@@ -118,26 +118,29 @@ async function fetchLiveNewsImpact() {
   }
 
   try {
-    // Get today's date in YYYY-MM-DD format
     const today = new Date().toISOString().split('T')[0];
 
-    const response = await axios.get(
-      `https://finnhub.io/api/v1/economic-calendar?from=${today}&to=${today}&token=${apiKey}`,
-      { timeout: 5000 }
-    );
+    const response = await axios.get('https://finnhub.io/api/v1/economic-calendar', {
+      params: {
+        from: today,
+        to: today,
+        token: apiKey
+      },
+      timeout: 5000
+    });
 
-    const calendarData = response.data.economicCalendar;
+    const calendarData = response?.data?.economicCalendar;
 
-    if (!calendarData || !Array.isArray(calendarData) || calendarData.length === 0) {
+    if (!Array.isArray(calendarData) || calendarData.length === 0) {
       return { 
         source: 'Finnhub Live Calendar', 
         newsUpdate: 'No major high-impact USD economic events scheduled for today.' 
       };
     }
 
-    // Filter for high or medium impact events affecting US / USD
     const usdEvents = calendarData.filter(e => 
-      e && (e.country === 'US' || e.currency === 'USD') && 
+      e && 
+      (e.country === 'US' || e.currency === 'USD') && 
       (e.impact === 'high' || e.impact === 'medium')
     );
 
@@ -149,22 +152,23 @@ async function fetchLiveNewsImpact() {
     }
 
     const topEvent = usdEvents[0];
-    const eventTime = topEvent.time ? topEvent.time.slice(11, 16) : 'Today';
+    const eventTime = topEvent?.time ? topEvent.time.slice(11, 16) : 'Today';
 
     return {
       source: 'Finnhub Live Calendar',
-      newsUpdate: `⚠️ HIGH IMPACT: US "${topEvent.event}" scheduled at ${eventTime} UTC.`
+      newsUpdate: `⚠️ HIGH IMPACT: US "${topEvent.event || 'Economic Event'}" scheduled at ${eventTime} UTC.`
     };
 
   } catch (error) {
-    console.error('⚠️ Finnhub API fetch error:', error.message);
+    console.error('⚠️ Finnhub fetch safely handled:', error?.message || error);
     return { 
       source: 'Finnhub Live Calendar', 
       newsUpdate: 'No major high-impact USD economic events scheduled for today.' 
     };
   }
 }
-    // Format top macro event
+
+// Format top macro event
     const topEvent = usdEvents[0];
     const eventTime = topEvent.time ? topEvent.time.slice(11, 16) : 'Today';
 

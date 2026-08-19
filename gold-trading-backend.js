@@ -126,11 +126,18 @@ async function fetchLiveNewsImpact() {
       { timeout: 5000 }
     );
 
-    const events = response.data.economicCalendar || [];
+    const calendarData = response.data.economicCalendar;
 
-    // Filter for high and medium impact US/USD economic events
-    const usdEvents = events.filter(e => 
-      (e.country === 'US' || e.currency === 'USD') && 
+    if (!calendarData || !Array.isArray(calendarData) || calendarData.length === 0) {
+      return { 
+        source: 'Finnhub Live Calendar', 
+        newsUpdate: 'No major high-impact USD economic events scheduled for today.' 
+      };
+    }
+
+    // Filter for high or medium impact events affecting US / USD
+    const usdEvents = calendarData.filter(e => 
+      e && (e.country === 'US' || e.currency === 'USD') && 
       (e.impact === 'high' || e.impact === 'medium')
     );
 
@@ -141,6 +148,22 @@ async function fetchLiveNewsImpact() {
       };
     }
 
+    const topEvent = usdEvents[0];
+    const eventTime = topEvent.time ? topEvent.time.slice(11, 16) : 'Today';
+
+    return {
+      source: 'Finnhub Live Calendar',
+      newsUpdate: `⚠️ HIGH IMPACT: US "${topEvent.event}" scheduled at ${eventTime} UTC.`
+    };
+
+  } catch (error) {
+    console.error('⚠️ Finnhub API fetch error:', error.message);
+    return { 
+      source: 'Finnhub Live Calendar', 
+      newsUpdate: 'No major high-impact USD economic events scheduled for today.' 
+    };
+  }
+}
     // Format top macro event
     const topEvent = usdEvents[0];
     const eventTime = topEvent.time ? topEvent.time.slice(11, 16) : 'Today';

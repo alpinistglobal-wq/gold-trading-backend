@@ -42,7 +42,7 @@ let priceHistory = {
  */
 async function fetchGoldPrice() {
   try {
-    const response = await axios.get('https://forex-data-feed.swissquote.com/public-quotes/b2c/quotes/data/v1/quotes/XAU/USD', {
+    const response = await axios.get('https://forex-data-feed.swissquote.com/public-quotes/b2c/quotes/data/v1/quotes/XAUUSD', {
       timeout: 5000,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -50,8 +50,8 @@ async function fetchGoldPrice() {
       }
     });
 
-    const profile = response.data?.[0]?.profiles?.[0];
-    const price = profile?.bid || profile?.ask || 2045.50;
+    const quote = response.data?.[0]?.profiles?.[0];
+    const price = quote?.bid || quote?.ask || 2045.50;
 
     priceHistory.prices.push(price);
     priceHistory.timestamps.push(new Date());

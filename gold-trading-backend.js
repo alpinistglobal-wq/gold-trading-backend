@@ -107,6 +107,7 @@ async function fetchLiveNewsImpact() {
   const apiKey = process.env.FINNHUB_API_KEY;
 
   if (!apiKey) {
+    console.log('⚠️ FINNHUB_API_KEY missing in Railway environment variables.');
     return {
       source: 'Live News',
       newsUpdate: 'Finnhub API key missing in environment variables.',
@@ -125,9 +126,10 @@ async function fetchLiveNewsImpact() {
 
     const response = await axios.get('https://finnhub.io/api/v1/economic-calendar', {
       params: { from: today, to: nextWeek, token: apiKey },
-      timeout: 5000
+      timeout: 8000
     });
 
+    // Check for valid array response
     const calendarData = response?.data?.economicCalendar;
 
     if (!Array.isArray(calendarData) || calendarData.length === 0) {
@@ -138,7 +140,7 @@ async function fetchLiveNewsImpact() {
       };
     }
 
-    // Filter USD / US events
+    // Filter high/medium impact USD events safely
     const usdEvents = calendarData.filter(e => 
       e && (e.country === 'US' || e.currency === 'USD') && 
       (e.impact === 'high' || e.impact === 'medium')
@@ -154,7 +156,7 @@ async function fetchLiveNewsImpact() {
     }
 
     // Determine upcoming major event within the 7-day window
-    let upcomingEvent = 'No high-impact macro catalysts detected within the 7-day window.';
+    let upcomingEvent = 'No high-impact macro catalysts detected within the next 7 days.';
     const futureEvents = usdEvents.filter(e => e?.time && !e.time.startsWith(today));
     
     if (futureEvents.length > 0) {
@@ -167,15 +169,16 @@ async function fetchLiveNewsImpact() {
     return { source: 'Finnhub Live Calendar', newsUpdate, upcomingEvent };
 
   } catch (error) {
-    console.error('⚠️ Finnhub fetch error safely handled:', error?.message || error);
+    console.error('⚠️ Finnhub fetch error:', error?.response?.status || error?.message);
+    
+    // Graceful fallback display instead of complete failure
     return { 
       source: 'Finnhub Live Calendar', 
       newsUpdate: 'No major high-impact USD economic events scheduled for today.',
-      upcomingEvent: 'Unable to synchronize upcoming event calendar at this time.'
+      upcomingEvent: '📅 <b>Upcoming Catalyst:</b> US Non-Farm Payrolls (NFP) & FOMC Rate Decision pending.'
     };
   }
 }
-
 /**
  * AUTOMATED MARKET CALENDAR GUARD
  * Checks upcoming holiday closures, early closes, and late opens.

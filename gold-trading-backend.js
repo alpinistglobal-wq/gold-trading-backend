@@ -583,12 +583,13 @@ async function runAnalysis() {
     const scoring = calculateConfidenceScore(sources, bots);
 
     const metrics = calculateTradeMetrics(
-      goldPriceData.price,
-      scoring.recommendation,
-      scoring.buyCount,
-      scoring.sellCount,
-      priceHistory.prices
-    );
+  goldPriceData.price,
+  scoring.recommendation,
+  scoring.buyCount,
+  scoring.sellCount,
+  priceHistory.prices,
+  liveNews // <-- Added liveNews parameter here
+);
 
     const analysisData = {
       timestamp: new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' }),

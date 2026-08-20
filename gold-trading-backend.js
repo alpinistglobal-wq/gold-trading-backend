@@ -369,9 +369,10 @@ function analyzeVADERSentiment() {
   return { bot: 'VADER', signal: signals[Math.floor(Math.random() * 3)], confidence: 60 };
 }
 
-// ===== TRADE METRICS CALCULATION =====
-
-function calculateTradeMetrics(currentPrice, recommendation, buyCount, sellCount, prices) {
+/**
+ * TRADE METRICS & INDEPENDENT FORECAST ENGINE
+ */
+function calculateTradeMetrics(currentPrice, recommendation, buyCount, sellCount, prices, newsData) {
   let volatilityStatus = 'LOW 🟢';
   let priceDelta = 6.0;
   
@@ -409,24 +410,51 @@ function calculateTradeMetrics(currentPrice, recommendation, buyCount, sellCount
   let takeProfit = 'N/A';
   let exitPrice = 'N/A';
 
+  // 15-Min & 1-Hour Short-term Tactical Targets
   let forecast15m = 'Consolidating Side-ways';
   let forecast1h = 'Range-bound movement likely';
-  let forecast24h = 'Macro range holding within support/resistance levels';
 
   if (recommendation.includes('BUY')) {
     stopLoss = (basePrice - priceDelta).toFixed(2);
     takeProfit = (basePrice + (priceDelta * 1.8)).toFixed(2);
     exitPrice = takeProfit;
-    forecast15m = `Bullish continuation towards $${takeProfit}`;
+    forecast15m = `Bullish momentum towards $${takeProfit}`;
     forecast1h = `Upward structure intact, testing $${(basePrice + (priceDelta * 2.5)).toFixed(2)}`;
-    forecast24h = `Daily bullish trend target towards $${(basePrice + (priceDelta * 4.0)).toFixed(2)}`;
   } else if (recommendation.includes('SELL')) {
     stopLoss = (basePrice + priceDelta).toFixed(2);
     takeProfit = (basePrice - (priceDelta * 1.8)).toFixed(2);
     exitPrice = takeProfit;
     forecast15m = `Bearish pressure towards $${takeProfit}`;
     forecast1h = `Downward trend expected, testing $${(basePrice - (priceDelta * 2.5)).toFixed(2)}`;
-    forecast24h = `Daily bearish macro target towards $${(basePrice - (priceDelta * 4.0)).toFixed(2)}`;
+  }
+
+  // ===== INDEPENDENT 24-HOUR MACRO FORECAST ENGINE =====
+  // Aggregates Signal Ratio, Event Risk, and High-Impact News
+  let macroScore = buyCount - sellCount; // Net Signal Bias
+  let newsImpactText = newsData?.newsUpdate || '';
+  let eventText = newsData?.upcomingEvent || '';
+
+  let forecast24h = '';
+
+  // Case 1: High Event / News Risk
+  if (newsImpactText.includes('HIGH IMPACT') || eventText.includes('Catalyst')) {
+    if (macroScore > 3) {
+      forecast24h = `Bullish Expansion expected post-news; targeting Key Resistance ($${(basePrice + 25).toFixed(2)}) with event-driven volatility.`;
+    } else if (macroScore < -3) {
+      forecast24h = `Bearish Breakdown expected on high-impact catalysts; testing Key Support ($${(basePrice - 25).toFixed(2)}).`;
+    } else {
+      forecast24h = `High Volatility Consolidation ahead of major economic catalysts ($${(basePrice - 15).toFixed(2)} - $${(basePrice + 15).toFixed(2)}).`;
+    }
+  } 
+  // Case 2: Strong Technical Bias (Bots + Indicators aligned)
+  else if (macroScore >= 4) {
+    forecast24h = `Strong Daily Bullish Trend; macro buyers maintaining control towards $${(basePrice + 30).toFixed(2)}.`;
+  } else if (macroScore <= -4) {
+    forecast24h = `Strong Daily Bearish Trend; institutional selling driving price towards $${(basePrice - 30).toFixed(2)}.`;
+  } 
+  // Case 3: Neutral / Mixed Signals
+  else {
+    forecast24h = `Macro Range-Bound ($${(basePrice - 10).toFixed(2)} - $${(basePrice + 10).toFixed(2)}); awaiting clear directional catalyst.`;
   }
 
   return {
@@ -442,7 +470,6 @@ function calculateTradeMetrics(currentPrice, recommendation, buyCount, sellCount
     forecast24h,
   };
 }
-
 // ===== SCORING ENGINE =====
 
 function calculateConfidenceScore(sources, bots) {

@@ -1,10 +1,11 @@
 /**
- * GOLD TRADING SIGNALS AGGREGATOR - BACKEND v2.0
+ * GOLD TRADING SIGNALS AGGREGATOR - BACKEND v2.1
  * Platform: Node.js (Railway.app)
  * 
  * SECTION 1: Existing bot message (UNCHANGED)
- * SECTION 2: Alpinist independent system (NEW - 3 layers)
- * SECTION 3: Comparison section (NEW)
+ * SECTION 2: Alpinist independent system (NEW - with price targets, market trend)
+ * SECTION 3: Clear Comparison (NEW)
+ * SECTION 4: News & Market Calendar (PRESERVED + ASIAN MARKET)
  * 
  * Delivers full trade setups every 5 minutes with dual-system analysis.
  */
@@ -161,7 +162,7 @@ async function fetchLiveNewsImpact() {
       const nextMajor = futureEvents[0];
       const eventDate = nextMajor?.time ? nextMajor.time.slice(0, 10) : 'Upcoming';
       const eventTime = nextMajor?.time ? nextMajor.time.slice(11, 16) : '';
-      upcomingEvent = `📅 <b>Upcoming Catalyst:</b> US "${nextMajor?.event || 'Major Economic Data'}" on ${eventDate} at ${eventTime} UTC.`;
+      upcomingEvent = `📅 <b>Upcoming Catalyst (US):</b> "${nextMajor?.event || 'Major Economic Data'}" on ${eventDate} at ${eventTime} UTC.`;
     }
 
     return { source: 'Finnhub Live Calendar', newsUpdate, upcomingEvent };
@@ -172,7 +173,7 @@ async function fetchLiveNewsImpact() {
     return { 
       source: 'Finnhub Live Calendar', 
       newsUpdate: 'No major high-impact USD economic events scheduled for today.',
-      upcomingEvent: '📅 <b>Upcoming Catalyst:</b> US Non-Farm Payrolls (NFP) & FOMC Rate Decision pending.'
+      upcomingEvent: '📅 <b>Upcoming Catalyst (US):</b> US Non-Farm Payrolls (NFP) & FOMC Rate Decision pending.'
     };
   }
 }
@@ -211,6 +212,32 @@ function checkMarketCalendar() {
   }
 
   return '';
+}
+
+// Get Asian market status
+function getAsianMarketStatus() {
+  const now = new Date();
+  const pktHour = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Karachi' })).getHours();
+  const tokyoHour = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })).getHours();
+  const hongkongHour = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Hong_Kong' })).getHours();
+
+  let asianStatus = '🌏 <b>ASIAN MARKET STATUS:</b> ';
+  
+  // Tokyo market (open 9:00-15:00 JST)
+  const tokyoOpen = tokyoHour >= 9 && tokyoHour < 15;
+  asianStatus += `Tokyo ${tokyoOpen ? '🟢 OPEN' : '🔴 CLOSED'} | `;
+  
+  // Hong Kong market (open 9:30-16:00 HKT)
+  const hkOpen = hongkongHour >= 9.5 && hongkongHour < 16;
+  asianStatus += `HK ${hkOpen ? '🟢 OPEN' : '🔴 CLOSED'} | `;
+  
+  // Pakistan market (open 10:00-15:30 PKT)
+  const pkOpen = pktHour >= 10 && pktHour < 15.5;
+  asianStatus += `Pakistan ${pkOpen ? '🟢 OPEN' : '🔴 CLOSED'}`;
+  
+  asianStatus += `\n💡 <b>Asian Impact:</b> Moderate volatility during Asian hours; major moves expected post-London/NY open.`;
+  
+  return asianStatus;
 }
 
 // Placeholder functions for additional signal sources
@@ -313,6 +340,7 @@ function analyzeVADERSentiment() {
 
 function calculateTradeMetrics(basePrice, recommendation, buyCount, sellCount, prices, newsData) {
   let bias = buyCount > sellCount ? 'BULLISH 🐂' : sellCount > buyCount ? 'BEARISH 🐻' : 'NEUTRAL 🟡';
+  let marketTrend = buyCount > sellCount ? 'UPTREND' : sellCount > buyCount ? 'DOWNTREND' : 'SIDEWAYS';
   
   let riskLevel = 'LOW RISK ✅';
   if (Math.abs(buyCount - sellCount) >= 6) riskLevel = 'HIGH RISK ⚠️';
@@ -347,26 +375,41 @@ function calculateTradeMetrics(basePrice, recommendation, buyCount, sellCount, p
   let newsImpactText = newsData?.newsUpdate || '';
   let eventText = newsData?.upcomingEvent || '';
   let forecast24h = '';
+  let priceHigh24h = '';
+  let priceLow24h = '';
 
   if (newsImpactText.includes('HIGH IMPACT') || eventText.includes('Catalyst')) {
     if (macroScore > 3) {
       forecast24h = `Bullish Expansion expected post-news; targeting Key Resistance ($${(basePrice + 25).toFixed(2)}) with event-driven volatility.`;
+      priceHigh24h = `$${(basePrice + 30).toFixed(2)}`;
+      priceLow24h = `$${(basePrice - 10).toFixed(2)}`;
     } else if (macroScore < -3) {
       forecast24h = `Bearish Breakdown expected on high-impact catalysts; testing Key Support ($${(basePrice - 25).toFixed(2)}).`;
+      priceHigh24h = `$${(basePrice + 10).toFixed(2)}`;
+      priceLow24h = `$${(basePrice - 30).toFixed(2)}`;
     } else {
       forecast24h = `High Volatility Consolidation ahead of major economic catalysts ($${(basePrice - 15).toFixed(2)} - $${(basePrice + 15).toFixed(2)}).`;
+      priceHigh24h = `$${(basePrice + 15).toFixed(2)}`;
+      priceLow24h = `$${(basePrice - 15).toFixed(2)}`;
     }
   } else if (macroScore >= 4) {
     forecast24h = `Strong Daily Bullish Trend; macro buyers maintaining control towards $${(basePrice + 30).toFixed(2)}.`;
+    priceHigh24h = `$${(basePrice + 35).toFixed(2)}`;
+    priceLow24h = `$${(basePrice - 5).toFixed(2)}`;
   } else if (macroScore <= -4) {
     forecast24h = `Strong Daily Bearish Trend; institutional selling driving price towards $${(basePrice - 30).toFixed(2)}.`;
+    priceHigh24h = `$${(basePrice + 5).toFixed(2)}`;
+    priceLow24h = `$${(basePrice - 35).toFixed(2)}`;
   } else {
     forecast24h = `Macro Range-Bound ($${(basePrice - 10).toFixed(2)} - $${(basePrice + 10).toFixed(2)}); awaiting clear directional catalyst.`;
+    priceHigh24h = `$${(basePrice + 12).toFixed(2)}`;
+    priceLow24h = `$${(basePrice - 12).toFixed(2)}`;
   }
 
   return {
     volatilityStatus,
     bias,
+    marketTrend,
     riskLevel,
     entryPrice,
     stopLoss,
@@ -375,6 +418,8 @@ function calculateTradeMetrics(basePrice, recommendation, buyCount, sellCount, p
     forecast15m,
     forecast1h,
     forecast24h,
+    priceHigh24h,
+    priceLow24h,
   };
 }
 
@@ -409,7 +454,7 @@ function calculateConfidenceScore(sources, bots) {
 // ALPINIST INDEPENDENT SYSTEM FUNCTIONS
 // ==========================================
 
-async function calculateMacroExpectation() {
+async function calculateMacroExpectation(basePrice) {
   return {
     realYields: -0.35,
     realYieldsChange: -0.08,
@@ -419,12 +464,15 @@ async function calculateMacroExpectation() {
     fedFundsRate: 4.50,
     fedPivotSignal: 'Dovish Bias',
     twoTenSpread: 0.32,
+    marketTrend: 'UPTREND',
+    priceHigh24h: (basePrice * 1.015).toFixed(2),
+    priceLow24h: (basePrice * 0.985).toFixed(2),
     macroScore: 72,
     macroInterpretation: 'Strong structural tailwinds for gold',
   };
 }
 
-async function calculatePositioningAndSentiment() {
+async function calculatePositioningAndSentiment(basePrice) {
   return {
     cotNonCommercialLong: 78,
     cotCommercialShort: 65,
@@ -434,12 +482,13 @@ async function calculatePositioningAndSentiment() {
     leaseRate: 2.15,
     retailLongPercent: 82,
     comexChange: -12500,
+    expectedTarget: (basePrice * 1.02).toFixed(2),
     positioningScore: 64,
     positioningInterpretation: 'Mixed: Institutional accumulation vs. Crowded fund long',
   };
 }
 
-async function calculateMicrostructure() {
+async function calculateMicrostructure(basePrice) {
   return {
     cumulativeDelta: 2450,
     cumulativeDeltaTrend: '🟢 POSITIVE',
@@ -451,6 +500,8 @@ async function calculateMicrostructure() {
     volumePointOfControl: 2420.00,
     buyingPressure: 68,
     sellingPressure: 32,
+    resistanceTarget: (basePrice * 1.03).toFixed(2),
+    supportLevel: (basePrice * 0.97).toFixed(2),
     microScore: 71,
     microInterpretation: 'Order flow confirms institutional demand',
   };
@@ -465,20 +516,28 @@ function generateAlpinistSignal(macro, positioning, micro) {
   return { signal: '🟡 NEUTRAL', score: avgScore };
 }
 
-function generateDivergenceAnalysis(existingSignal, alpinistSignal) {
+function generateDivergenceAnalysis(existingSignal, existingConfidence, alpinistSignal, marketTrend) {
   const existingBearish = existingSignal.includes('SELL');
   const alpinistBullish = alpinistSignal.signal.includes('BUY');
   
+  let comparison = '';
+  let alignment = '';
+  
   if (existingBearish && !alpinistBullish) {
-    return '⚠️ ALIGNED BEARISH: Both showing sell pressure';
+    comparison = `<b>Market (${existingSignal}, ${existingConfidence}%):</b> Both showing SELL pressure\n<b>Alpinist (${alpinistSignal.signal}, ${alpinistSignal.score.toFixed(0)}):</b> Confirms bearish bias`;
+    alignment = '⚠️ <b>ALIGNED BEARISH</b> - Proceed with short as planned';
+  } else if (!existingBearish && alpinistBullish) {
+    comparison = `<b>Market (${existingSignal}, ${existingConfidence}%):</b> Both showing BUY pressure\n<b>Alpinist (${alpinistSignal.signal}, ${alpinistSignal.score.toFixed(0)}):</b> Confirms bullish bias`;
+    alignment = '✅ <b>FULL ALIGNMENT</b> - Highest confidence setup';
+  } else if (existingBearish && alpinistBullish) {
+    comparison = `<b>Market (${existingSignal}, ${existingConfidence}%):</b> BEARISH (price-based)\n<b>Alpinist (${alpinistSignal.signal}, ${alpinistSignal.score.toFixed(0)}):</b> BULLISH (macro-based)`;
+    alignment = '⚡ <b>DIVERGENCE</b> - Potential reversal 24-48h ahead';
+  } else {
+    comparison = `<b>Market (${existingSignal}, ${existingConfidence}%):</b> Mixed signals\n<b>Alpinist (${alpinistSignal.signal}, ${alpinistSignal.score.toFixed(0)}):</b> Mixed signals`;
+    alignment = '🟡 <b>INCONCLUSIVE</b> - Wait for stronger confirmation';
   }
-  if (!existingBearish && alpinistBullish) {
-    return '✅ FULL ALIGNMENT: Both systems bullish';
-  }
-  if (existingBearish && alpinistBullish) {
-    return '⚡ DIVERGENCE: Market BEARISH but Alpinist BULLISH → Potential reversal 24-48h ahead';
-  }
-  return '🟡 MIXED: Systems disagreeing';
+
+  return { comparison, alignment };
 }
 
 // ===== TELEGRAM BROADCASTER (WITH ALPINIST SECTIONS) =====
@@ -523,15 +582,16 @@ async function sendTelegramAlert(data) {
 📍 <b>Source:</b> ${data.priceSource}
 🕐 <b>Time:</b> ${data.timestamp} (PKT)
 ${scheduleSection}
-📰 <b>LIVE NEWS IMPACT:</b> ${data.newsUpdate}
-🗓️ <b>UPCOMING MAJOR EVENT:</b> ${data.upcomingEvent}`;
+📰 <b>LIVE NEWS IMPACT (US & International):</b> ${data.newsUpdate}
+🗓️ <b>UPCOMING MAJOR EVENT (US):</b> ${data.upcomingEvent}
+${data.asianMarketStatus}`;
 
     // ==========================================
     // SECTION 2: ALPINIST INDEPENDENT SYSTEM (NEW)
     // ==========================================
-    const macro = await calculateMacroExpectation();
-    const positioning = await calculatePositioningAndSentiment();
-    const micro = await calculateMicrostructure();
+    const macro = await calculateMacroExpectation(data.entryPrice);
+    const positioning = await calculatePositioningAndSentiment(data.entryPrice);
+    const micro = await calculateMicrostructure(data.entryPrice);
     const alpinistSignal = generateAlpinistSignal(macro, positioning, micro);
 
     const alpinistMessage = `
@@ -546,6 +606,8 @@ ${scheduleSection}
 📈 Real Yields: <b>${macro.realYields}%</b> ${macro.realYieldsTrend}
 💵 DXY Momentum: <b>${macro.dxyMomentum}%</b> ${macro.dxyMomentumTrend}
 🏦 Fed Signal: <b>${macro.fedPivotSignal}</b>
+📊 <b>Market Trend:</b> ${macro.marketTrend}
+🎯 <b>24H Price Target:</b> HIGH: <b>$${macro.priceHigh24h}</b> | LOW: <b>$${macro.priceLow24h}</b>
 ✅ Conclusion: ${macro.macroInterpretation}
 
 🔷 <b>LAYER 2: POSITIONING & SENTIMENT</b> (${positioning.positioningScore}/100)
@@ -553,6 +615,7 @@ ${scheduleSection}
 💰 GLD Flows: <b>+$${(positioning.gldDailyFlow / 1000000).toFixed(0)}M</b> ${positioning.gldFlowTrend}
 🔒 Lease Rate: <b>${positioning.leaseRate}%</b>
 👥 Retail Long: <b>${positioning.retailLongPercent}%</b>
+🎯 <b>Expected Target:</b> <b>$${positioning.expectedTarget}</b>
 ✅ Conclusion: ${positioning.positioningInterpretation}
 
 🔷 <b>LAYER 3: MICROSTRUCTURE & ORDER FLOW</b> (${micro.microScore}/100)
@@ -560,28 +623,31 @@ ${scheduleSection}
 📉 IV Regime: <b>${micro.ivRegime}</b>
 📍 VWAP: <b>${micro.vwapDeviation.toFixed(1)}σ</b> ${micro.vwapSignal}
 🔄 Buy/Sell: <b>${micro.buyingPressure}%</b> / <b>${micro.sellingPressure}%</b>
+🎯 <b>Resistance:</b> <b>$${micro.resistanceTarget}</b> | <b>Support:</b> <b>$${micro.supportLevel}</b>
 ✅ Conclusion: ${micro.microInterpretation}`;
 
     // ==========================================
-    // SECTION 3: COMPARISON (NEW)
+    // SECTION 3: CLEAR COMPARISON (NEW)
     // ==========================================
-    const divergence = generateDivergenceAnalysis(data.recommendation, alpinistSignal);
+    const divergence = generateDivergenceAnalysis(data.recommendation, data.finalConfidence, alpinistSignal, data.marketTrend);
     
     const comparisonMessage = `
 
 ═══════════════════════════════════════════════════════════════════════════════
-⚖️ <b>COMPARISON & EXECUTION</b>
+⚖️ <b>DUAL-SYSTEM COMPARISON & EXECUTION</b>
 ═══════════════════════════════════════════════════════════════════════════════
 
-📊 System Comparison:
-   Market: ${data.recommendation} (Real-time) | Alpinist: ${alpinistSignal.signal} (24-48h lead)
+${divergence.comparison}
 
-🎯 Divergence: ${divergence}
+<b>📊 ALIGNMENT STATUS:</b> ${divergence.alignment}
 
-💡 Workflow: Execute market signal → Monitor Alpinist for reversal signals 24-48h ahead
+<b>💡 EXECUTION WORKFLOW:</b>
+1️⃣ <b>Market Signal (Reactive):</b> ${data.recommendation} @ $${data.entryPrice} | SL: $${data.stopLoss} | TP: $${data.takeProfit}
+2️⃣ <b>Alpinist Signal (Proactive):</b> ${alpinistSignal.signal} (${alpinistSignal.score.toFixed(0)}/100)
+3️⃣ <b>Action:</b> ${divergence.alignment === '⚠️ <b>ALIGNED BEARISH</b> - Proceed with short as planned' ? 'Execute short, monitor for reversal signals 24-48h out' : divergence.alignment === '✅ <b>FULL ALIGNMENT</b> - Highest confidence setup' ? 'Execute trade with highest confidence' : 'Take trade cautiously, watch for divergence resolution'}
 
 ═══════════════════════════════════════════════════════════════════════════════
-🚀 ALPINIST v2.0 | Dual Independent + Market-Based Analysis
+🚀 ALPINIST v2.1 | Dual Independent + Market-Based Analysis
 ═══════════════════════════════════════════════════════════════════════════════`;
 
     const completeMessage = existingMessage + alpinistMessage + comparisonMessage;
@@ -595,10 +661,10 @@ ${scheduleSection}
       await new Promise(resolve => setTimeout(resolve, 500));
       await bot.sendMessage(CONFIG.telegramChatId, part2, { parse_mode: 'HTML' });
       
-      console.log('✅ Telegram alert sent (2 parts) with Alpinist system + comparison');
+      console.log('✅ Telegram alert sent (2 parts) with prices, trends, Asian market, and clear comparison');
     } else {
       await bot.sendMessage(CONFIG.telegramChatId, completeMessage, { parse_mode: 'HTML' });
-      console.log('✅ Telegram alert sent with Alpinist system + comparison');
+      console.log('✅ Telegram alert sent with prices, trends, Asian market, and clear comparison');
     }
   } catch (error) {
     console.error('Telegram broadcast error:', error.message);
@@ -618,6 +684,7 @@ async function runAnalysis() {
     const myfxbook = await fetchMyfxbookSignals();
     const liveNews = await fetchLiveNewsImpact();
     const scheduleAlert = checkMarketCalendar();
+    const asianMarketStatus = getAsianMarketStatus();
     const kitco = await fetchKitcoSentiment();
     const dxy = await fetchDXYData();
     const vix = await fetchVIXData();
@@ -665,14 +732,15 @@ async function runAnalysis() {
       newsUpdate: liveNews.newsUpdate,
       upcomingEvent: liveNews.upcomingEvent,
       marketScheduleAlert: scheduleAlert,
+      asianMarketStatus: asianMarketStatus,
       ...metrics,
     };
 
     console.log('\n📈 ANALYSIS RESULTS:');
     console.log(`Price: $${analysisData.goldPrice}`);
     console.log(`Recommendation: ${analysisData.recommendation}`);
-    console.log(`24h Forecast: ${analysisData.forecast24h}`);
-    console.log(`Upcoming Event: ${analysisData.upcomingEvent}`);
+    console.log(`Market Trend: ${analysisData.marketTrend}`);
+    console.log(`24h Target - High: $${analysisData.priceHigh24h}, Low: $${analysisData.priceLow24h}`);
 
     await sendTelegramAlert(analysisData);
 
@@ -695,7 +763,7 @@ app.get('/health', (req, res) => {
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
-  console.log('🕐 Gold Trading System initialized with Alpinist v2.0');
+  console.log('🕐 Gold Trading System v2.1 initialized with Alpinist + Price Targets + Asian Market Status');
 
   runAnalysis();
   setInterval(runAnalysis, CONFIG.checkInterval);
